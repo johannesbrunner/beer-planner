@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fermentation Tank Configurator</title>
+  <style>
+    .section-title { font-weight: bold; margin: 15px 0 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+    #controls { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 4px; }
+    .input-group { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div id="scene-container"></div>
+  <div id="controls">
+    <h2 class="section-title">Tank Size</h2>
+    <div class="input-group">
+      <label for="tankHeight">Tank Height/Length (m):</label>
+      <input type="number" id="tankHeight" value="1" step="0.1" min="0.1">
+    </div>
+    <div class="input-group">
+      <label for="tankDiameter">Tank Diameter (m):</label>
+      <input type="number" id="tankDiameter" value="1" step="0.1" min="0.1">
+    </div>
+    <h2 class="section-title">General Configuration</h2>
+    <div class="input-group">
+      <label>Orientation:</label>
+      <span>Vertical</span>
+    </div>
+    <div class="input-group">
+      <label for="mountingOption">Mounting:</label>
+      <select id="mountingOption">
+        <option value="legs" selected>Legs</option>
+        <option value="slab">Slab</option>
+      </select>
+    </div>
+    <h2 class="section-title">Mounting Details</h2>
+    <div class="input-group">
+      <label for="legHeight">Leg Height (m):</label>
+      <input type="number" id="legHeight" value="1" step="0.1" min="0.1">
+    </div>
+    <div class="input-group">
+      <label for="legThickness">Leg Thickness (cm):</label>
+      <input type="number" id="legThickness" value="5" step="0.5" min="1">
+    </div>
+    <h2 class="section-title">Cone Configuration</h2>
+    <div class="input-group">
+      <label for="coneHeight">Cone Height (m):</label>
+      <input type="number" id="coneHeight" value="0.5" step="0.1" min="0.1">
+    </div>
+    <h2 class="section-title">Grid Configuration</h2>
+    <div class="input-group">
+      <label for="gridRows">Rows:</label>
+      <input type="number" id="gridRows" value="3" step="1" min="1">
+    </div>
+    <div class="input-group">
+      <label for="gridColumns">Columns:</label>
+      <input type="number" id="gridColumns" value="4" step="1" min="1">
+    </div>
+    <div class="input-group">
+      <label for="rowSpacing">Row Spacing (m):</label>
+      <input type="number" id="rowSpacing" value="1.5" step="0.1" min="0">
+    </div>
+    <div class="input-group">
+      <label for="colSpacing">Column Spacing (m):</label>
+      <input type="number" id="colSpacing" value="2" step="0.1" min="0">
+    </div>
+    <div class="button-group">
+      <button id="generate">Generate Grid</button>
+      <button id="export-stl">Export STL</button>
+    </div>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+    import { STLExporter } from 'three/examples/jsm/exporters/STLExporter';
+
+    let scene, camera, renderer, controls;
+    let tankGroup;
+
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf0f0f0);
+
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+      camera.position.set(5, 5, 5);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.getElementById('scene-container').appendChild(renderer.domElement);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+      const light = new THREE.DirectionalLight(0xffffff, 1.5);
+      light.position.set(10, 10, 10);
+      scene.add(light);
+      const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+      scene.add(hemiLight);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      tankGroup = new THREE.Group();
+      scene.add(tankGroup);
+      scene.add(new THREE.GridHelper(20, 20));
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    // Now accepts coneHeight as a parameter.
+    function createTankModel(tankHeight, tankDiameter, mounting, legHeight, legThickness, baseHeight, metalColor, coneHeight) {
+      const group = new THREE.Group();
+      const metalMaterial = new THREE.MeshPhongMaterial({
+        color: metalColor,
+        specular: 0xD3D3D3,
+        shininess: 100
+      });
+      // Tank body
+      const bodyGeo = new THREE.CylinderGeometry(tankDiameter/2, tankDiameter/2, tankHeight, 32);
+      const tankMesh = new THREE.Mesh(bodyGeo, metalMaterial);
+      tankMesh.position.y = baseHeight + tankHeight/2;
+      group.add(tankMesh);
+      // Configurable conical bottom
+      const coneGeo = new THREE.ConeGeometry(tankDiameter/2, coneHeight, 32);
+      coneGeo.translate(0, coneHeight/2, 0);
+      const coneMesh = new THREE.Mesh(coneGeo, metalMaterial);
+      coneMesh.rotation.x = Math.PI;
+      coneMesh.position.y = baseHeight;
+      group.add(coneMesh);
+      // Mounting
+      if (mounting === 'legs') {
+        const legMaterial = new THREE.MeshPhongMaterial({
+          color: metalColor,
+          specular: 0xffffff,
+          shininess: 100
+        });
+        const legGeo = new THREE.CylinderGeometry(legThickness/2, legThickness/2, legHeight, 8);
+        for (let i = 0; i < 4; i++) {
+          const angle = (i / 4) * Math.PI * 2;
+          const leg = new THREE.Mesh(legGeo, legMaterial);
+          const rad = (tankDiameter/2) * 0.8;
+          leg.position.set(Math.cos(angle) * rad, legHeight/2, Math.sin(angle) * rad);
+          group.add(leg);
+        }
+      } else {
+        const slabThickness = 0.2;
+        const slabWidth = tankDiameter * 1.5;
+        const slabDepth = tankDiameter * 1.5;
+        const slabGeo = new THREE.BoxGeometry(slabWidth, slabThickness, slabDepth);
+        const slabMaterial = new THREE.MeshPhongMaterial({
+          color: metalColor,
+          specular: 0xffffff,
+          shininess: 100
+        });
+        const slab = new THREE.Mesh(slabGeo, slabMaterial);
+        slab.position.y = slabThickness / 2;
+        group.add(slab);
+      }
+      return group;
+    }
+
+    function createTankGrid() {
+      while (tankGroup.children.length > 0) {
+        tankGroup.remove(tankGroup.children[0]);
+      }
+      const tankHeight = parseFloat(document.getElementById('tankHeight').value);
+      const tankDiameter = parseFloat(document.getElementById('tankDiameter').value);
+      const mounting = document.getElementById('mountingOption').value;
+      const legHeight = parseFloat(document.getElementById('legHeight').value);
+      const legThickness = parseFloat(document.getElementById('legThickness').value) / 100;
+      const baseHeight = (mounting === 'legs') ? legHeight : 0.2;
+      const metalColor = 0xD3D3D3;
+      const coneHeight = parseFloat(document.getElementById('coneHeight').value);
+      const rows = parseInt(document.getElementById('gridRows').value);
+      const cols = parseInt(document.getElementById('gridColumns').value);
+      const rowSpacing = parseFloat(document.getElementById('rowSpacing').value);
+      const colSpacing = parseFloat(document.getElementById('colSpacing').value);
+      
+      const xOffset = -((cols - 1) * colSpacing) / 2;
+      const zOffset = -((rows - 1) * rowSpacing) / 2;
+      
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const tank = createTankModel(tankHeight, tankDiameter, mounting, legHeight, legThickness, baseHeight, metalColor, coneHeight);
+          tank.position.x = xOffset + c * colSpacing;
+          tank.position.z = zOffset + r * rowSpacing;
+          tankGroup.add(tank);
+        }
+      }
+    }
+
+    function exportSTL() {
+      const exporter = new STLExporter();
+      const result = exporter.parse(tankGroup, { binary: true });
+      const blob = new Blob([result], { type: 'application/octet-stream' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'fermentation-tank-grid.stl';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+
+    init();
+    document.getElementById('generate').addEventListener('click', createTankGrid);
+    document.getElementById('export-stl').addEventListener('click', exportSTL);
+    createTankGrid();
+  </script>
+</body>
+</html>
